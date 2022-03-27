@@ -1,0 +1,12 @@
+Release
+Debug
+*.bak
+*.orig
+*.tmp
+temp
+*.old
+*.~
+*.exe
+*.obj
+*.o
+*.a
