@@ -43,18 +43,21 @@
 
 I2C_HandleTypeDef hi2c1;
 
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN PV */
 
 volatile uint16_t new_measure_do = 0;
-uint16_t seconds = 0;
-uint8_t display_mode = 0;
+volatile uint16_t ticks = 0;
+uint16_t ticks_ = 0;
 uint16_t x = 0;
 uint16_t u = 0;
-uint16_t t = 0;
 
-uint16_t samples[5000];
+#define MAX_SAMPLES_COUNT 5000
+
+uint16_t samples[MAX_SAMPLES_COUNT];
+uint16_t sample_index = 0;
 
 /* USER CODE END PV */
 
@@ -64,6 +67,7 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -71,9 +75,16 @@ static void MX_TIM3_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-	if (htim->Instance == TIM3) //check if the interrupt comes from TIM1
-	{
+	if (htim->Instance == htim3.Instance) //check if the interrupt comes from TIM1
+			{
 		new_measure_do = 1;
+		return;
+	}
+	if (htim->Instance == htim2.Instance) {
+//		samples[sample_index] = 0;
+//		sample_index = (sample_index + 1) % MAX_SAMPLES_COUNT;
+		ticks = ticks + 1;
+		return;
 	}
 }
 
@@ -114,6 +125,7 @@ void read_current_adc() {
 }
 
 void process_timer_event() {
+	uint16_t tmp = ticks;
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 
 	OLED_DrawVLine(x, 0, 10);
@@ -131,6 +143,10 @@ void process_timer_event() {
 	sprintf(str, "%04d", u);
 	OLED_DrawStr(str, 0, 48, 1);
 
+	ticks_ = tmp - ticks_;
+	sprintf(str, "%05d", ticks_);
+	OLED_DrawStr(str, 32, 48, 1);
+	ticks_ = tmp;
 
 	OLED_UpdateScreen();
 
@@ -150,6 +166,7 @@ void process_timer_event() {
 //		append_measure_to_history(pressure);
 //	}
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+	ticks_=ticks;
 }
 
 /* USER CODE END 0 */
@@ -185,10 +202,12 @@ int main(void)
   MX_I2C1_Init();
   MX_ADC1_Init();
   MX_TIM3_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
 	init_my_devices();
 	HAL_TIM_Base_Start_IT(&htim3);
+	HAL_TIM_Base_Start_IT(&htim2);
 
   /* USER CODE END 2 */
 
@@ -239,7 +258,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV4;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
@@ -335,6 +354,51 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 3599;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief TIM3 Initialization Function
   * @param None
   * @retval None
@@ -353,9 +417,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 36000;
+  htim3.Init.Prescaler = 35999;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 2000;
+  htim3.Init.Period = 1999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
