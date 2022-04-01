@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "OLED.h"
+#include "checksignal.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -40,6 +41,7 @@
 
 /* Private variables ---------------------------------------------------------*/
  ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
 
 I2C_HandleTypeDef hi2c1;
 
@@ -48,6 +50,9 @@ TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN PV */
 
+SignalInfo signalInfo;
+
+volatile uint16_t adc_stopped=1;
 volatile uint16_t new_measure_do = 0;
 volatile uint16_t ticks = 0;
 uint16_t ticks_ = 0;
@@ -56,8 +61,8 @@ uint16_t u = 0;
 
 #define MAX_SAMPLES_COUNT 5000
 
-uint16_t samples[MAX_SAMPLES_COUNT];
-uint16_t sample_index = 0;
+volatile uint16_t samples[MAX_SAMPLES_COUNT]={0,};
+volatile uint16_t sample_index = 0;
 
 /* USER CODE END PV */
 
@@ -66,14 +71,25 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_ADC1_Init(void);
-static void MX_TIM3_Init(void);
+static void MX_DMA_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+	if (hadc->Instance==ADC1)
+	{
+		HAL_ADC_Stop(&hadc1);
+		adc_stopped=1;
+	}
+}
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim->Instance == htim3.Instance) //check if the interrupt comes from TIM1
 			{
@@ -150,23 +166,20 @@ void process_timer_event() {
 
 	OLED_UpdateScreen();
 
-//	seconds = (seconds + 1) % SECONDS_PER_HOUR;
-//	if ((seconds % SECONDS_READ_PRESSURE) == 0)
-//	{
-//		read_measure();
-//		set_now_pressure(pressure);
-//	}
-//	if ((seconds % SECONDS_CHANGE_DISPLAY) == 0)
-//	{
-//		display_mode = (display_mode + 1) % DISPLAY_MODES_COUNT;
-//		display(display_mode);
-//	}
-//	if ((seconds % SECONDS_UPDATE_HISTORY) == 0)
-//	{
-//		append_measure_to_history(pressure);
-//	}
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 	ticks_=ticks;
+}
+
+void draw_waveform()
+{
+	if (signalInfo.decimated==0)
+		return;
+	OLED_Clear(0);
+	for(uint16_t i=0;i<signalInfo.total_samples;i++)
+	{
+		OLED_DrawPixel(i, samples[i]);
+	}
+	OLED_UpdateScreen();
 }
 
 /* USER CODE END 0 */
@@ -201,8 +214,9 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_ADC1_Init();
-  MX_TIM3_Init();
+  MX_DMA_Init();
   MX_TIM2_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 
 	init_my_devices();
@@ -214,10 +228,18 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
-		HAL_Delay(100);
-		if (new_measure_do == 1) {
-			new_measure_do = 0;
-			process_timer_event();
+		HAL_Delay(10);
+//		if (new_measure_do == 1) {
+//			new_measure_do = 0;
+//			process_timer_event();
+//		}
+		if (adc_stopped)
+		{
+			// process adc data
+			process_adc(&signalInfo, samples, MAX_SAMPLES_COUNT);
+			draw_waveform();
+			adc_stopped=0;
+			HAL_ADC_Start_DMA(&hadc1, (uint32_t*)samples, MAX_SAMPLES_COUNT);
 		}
     /* USER CODE END WHILE */
 
@@ -294,7 +316,7 @@ static void MX_ADC1_Init(void)
   */
   hadc1.Instance = ADC1;
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
@@ -440,6 +462,22 @@ static void MX_TIM3_Init(void)
   /* USER CODE BEGIN TIM3_Init 2 */
 
   /* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
 
 }
 
