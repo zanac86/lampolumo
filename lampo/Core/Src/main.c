@@ -52,16 +52,21 @@ TIM_HandleTypeDef htim3;
 
 SignalInfo signalInfo;
 
-volatile uint16_t adc_stopped=1;
+uint16_t adc_count = 0;
+volatile uint16_t adc_stopped = 1;
 volatile uint16_t new_measure_do = 0;
-volatile uint16_t ticks = 0;
-uint16_t ticks_ = 0;
-uint16_t x = 0;
-uint16_t u = 0;
 
-#define MAX_SAMPLES_COUNT 5000
+volatile uint16_t tick1 = 0;
+volatile uint16_t tick2 = 0;
 
-volatile uint16_t samples[MAX_SAMPLES_COUNT]={0,};
+#define MAX_SAMPLES_COUNT 128
+
+#pragma pack(push, 4)
+//volatile uint16_t samples[MAX_SAMPLES_COUNT] =
+__IO uint16_t samples[MAX_SAMPLES_COUNT] =
+{ 0, };
+#pragma pack(pop)
+
 volatile uint16_t sample_index = 0;
 
 /* USER CODE END PV */
@@ -72,8 +77,8 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_DMA_Init(void);
-static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -81,41 +86,40 @@ static void MX_TIM3_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
-	if (hadc->Instance==ADC1)
+//	if (hadc->Instance == ADC1)
 	{
-		HAL_ADC_Stop(&hadc1);
-		adc_stopped=1;
+		sample_index++;
+//		HAL_ADC_Stop(&hadc1);
+		adc_stopped = 1;
 	}
 }
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-	if (htim->Instance == htim3.Instance) //check if the interrupt comes from TIM1
-			{
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	if (htim->Instance == htim2.Instance) //check if the interrupt comes from TIM1
+	{
+		// tick 1 s
+		tick1 = (tick1 + 1) % 10000;
 		new_measure_do = 1;
-		return;
 	}
-	if (htim->Instance == htim2.Instance) {
-//		samples[sample_index] = 0;
-//		sample_index = (sample_index + 1) % MAX_SAMPLES_COUNT;
-		ticks = ticks + 1;
-		return;
+	if (htim->Instance == htim3.Instance) //check if the interrupt comes from TIM1
+	{
+		// tick 5000 Hz
+//		tick2 = (tick2 + 1) % 10000;
+		tick2++;
+//		new_measure_do = 1;
 	}
 }
 
-void init_my_devices() {
-	HAL_Delay(300);
+void init_my_devices()
+{
+	HAL_Delay(400);
 	OLED_Init(&hi2c1);
 	OLED_FontSet(Font_MSX_6x8_rus1251);
-	OLED_SetContrast(5);
-
+	OLED_SetContrast(4);
 	OLED_Clear(0);
-
-	OLED_DrawStr("OLED Ok", 0, 0, 1);
-	OLED_UpdateScreen();
-	HAL_Delay(400);
-
 	char str[20];
 	sprintf(str, "S=%ld", HAL_RCC_GetSysClockFreq());
 	OLED_DrawStr(str, 0, 16, 1);
@@ -126,59 +130,44 @@ void init_my_devices() {
 	sprintf(str, "2=%ld", HAL_RCC_GetPCLK2Freq());
 	OLED_DrawStr(str, 64, 24, 1);
 	OLED_UpdateScreen();
-
-	HAL_ADCEx_Calibration_Start(&hadc1);
-
-	HAL_Delay(1000);
-
-}
-
-void read_current_adc() {
-	HAL_ADC_Start(&hadc1);
-	HAL_ADC_PollForConversion(&hadc1, 100);
-	u = HAL_ADC_GetValue(&hadc1);
-	HAL_ADC_Stop(&hadc1);
-}
-
-void process_timer_event() {
-	uint16_t tmp = ticks;
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-
-	OLED_DrawVLine(x, 0, 10);
-	x = (x + 1) % OLED_WIDTH;
-	if (x == 0) {
-		OLED_Clear(0);
-	}
-
-	char str[15];
-	sprintf(str, "%03d", x);
-	OLED_DrawStr(str, 100, 48, 1);
-
-	read_current_adc();
-
-	sprintf(str, "%04d", u);
-	OLED_DrawStr(str, 0, 48, 1);
-
-	ticks_ = tmp - ticks_;
-	sprintf(str, "%05d", ticks_);
-	OLED_DrawStr(str, 32, 48, 1);
-	ticks_ = tmp;
-
+	HAL_Delay(400);
+	OLED_Clear(0);
 	OLED_UpdateScreen();
-
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
-	ticks_=ticks;
 }
 
 void draw_waveform()
 {
-	if (signalInfo.decimated==0)
-		return;
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 	OLED_Clear(0);
-	for(uint16_t i=0;i<signalInfo.total_samples;i++)
+//	for (uint16_t i = 0; i < signalInfo.total_samples; i++)
+//	{
+//		OLED_DrawPixel(i, samples[i]);
+//	}
+
+	uint16_t i = 0;
+	for (int x = 0; x < 4; x++)
 	{
-		OLED_DrawPixel(i, samples[i]);
+		for (int y = 0; y < 8; y++)
+		{
+			char str[15];
+			sprintf(str, "%04d", samples[i]);
+			OLED_DrawStr(str, x * 32, y * 8, 1);
+			i++;
+		}
 	}
+	OLED_UpdateScreen();
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+}
+
+void print_ticks()
+{
+	char str[15];
+	sprintf(str, "%05u", tick1);
+	OLED_DrawStr(str, 10, 10, 1);
+	sprintf(str, "%05u", tick2);
+	OLED_DrawStr(str, 10, 30, 1);
+	sprintf(str, "%05u", sample_index);
+	OLED_DrawStr(str, 50, 48, 1);
 	OLED_UpdateScreen();
 }
 
@@ -215,31 +204,36 @@ int main(void)
   MX_I2C1_Init();
   MX_ADC1_Init();
   MX_DMA_Init();
-  MX_TIM2_Init();
   MX_TIM3_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
 	init_my_devices();
-	HAL_TIM_Base_Start_IT(&htim3);
+
+	HAL_ADCEx_Calibration_Start(&hadc1);
+
 	HAL_TIM_Base_Start_IT(&htim2);
+	HAL_TIM_Base_Start_IT(&htim3);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	while (1) {
-		HAL_Delay(10);
-//		if (new_measure_do == 1) {
-//			new_measure_do = 0;
-//			process_timer_event();
-//		}
+	while (1)
+	{
+		HAL_Delay(20);
+		if (new_measure_do == 1)
+		{
+			new_measure_do = 0;
+//			print_ticks();
+		}
 		if (adc_stopped)
 		{
-			// process adc data
-			process_adc(&signalInfo, samples, MAX_SAMPLES_COUNT);
+//			HAL_ADC_Stop_DMA(&hadc1);
 			draw_waveform();
-			adc_stopped=0;
-			HAL_ADC_Start_DMA(&hadc1, (uint32_t*)samples, MAX_SAMPLES_COUNT);
+			print_ticks();
+			adc_stopped = 0;
+			HAL_ADC_Start_DMA(&hadc1, (uint32_t*) samples, 16);
 		}
     /* USER CODE END WHILE */
 
@@ -280,7 +274,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
@@ -318,7 +312,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -330,7 +324,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_13CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -394,9 +388,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 3599;
+  htim2.Init.Prescaler = 7200-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4;
+  htim2.Init.Period = 10000-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -439,9 +433,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 35999;
+  htim3.Init.Prescaler = 360-1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 1999;
+  htim3.Init.Period = 40-1;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -521,7 +515,8 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
 	__disable_irq();
-	while (1) {
+	while (1)
+	{
 	}
   /* USER CODE END Error_Handler_Debug */
 }

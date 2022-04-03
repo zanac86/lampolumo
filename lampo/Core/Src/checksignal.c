@@ -60,7 +60,7 @@ void normalize_for_display(SignalInfo *s, volatile uint16_t *adc,
 	uint16_t DISP_H = 64;
 	if (s->range < DISP_H)
 	{
-		normalize_simple(s, adc, count);
+//		normalize_simple(s, adc, count);
 	}
 	else
 	{
@@ -87,6 +87,11 @@ void normalize_for_display(SignalInfo *s, volatile uint16_t *adc,
 void decimate_for_display(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 {
 	uint16_t DISP_W = 128;
+	if (count == DISP_W)
+	{
+		s->decimated = 1;
+		return;
+	}
 	uint16_t step = count / DISP_W;
 	uint16_t index_adc = 0;
 	uint16_t index_dec = 0;
@@ -109,7 +114,7 @@ void decimate_for_display(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 void process_adc(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 {
 	check_adc_data(s, adc, count);
-	normalize_for_display(s, adc, count);
+//	normalize_for_display(s, adc, count);
 	decimate_for_display(s, adc, count);
 }
 
