@@ -11,8 +11,10 @@ void check_adc_data(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 	s->minCode = adc[0];
 	s->maxCode = adc[0];
 	s->average = 0;
+	uint32_t sum = 0;
 	for (uint16_t i = 0; i < count; i++)
 	{
+		sum += adc[i];
 		if (adc[i] == 0)
 		{
 			s->zeros++;
@@ -30,65 +32,96 @@ void check_adc_data(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 			s->minCode = adc[i];
 		}
 	}
+	sum = ((sum * 100) / count) / 100;
+	s->average = (uint16_t) sum;
+
+#define GAP_MIN 100
+#define GAP_MAX (4095-GAP_MIN)
+	if (s->minCode>GAP_MIN)
+	{
+		s->minCode-=GAP_MIN;
+	}
+	if (s->maxCode<GAP_MAX)
+	{
+		s->maxCode+=GAP_MIN;
+	}
+
 	s->range = s->maxCode - s->minCode;
 	s->normalized = 0;
 	s->decimated = 0;
 	s->total_samples = count;
 	s->show_samples = 0;
+
 }
 
-void normalize_simple(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
+void normalize_simple(SignalInfo *s, volatile uint16_t *adc)
 {
-	for (uint16_t i = 0; i < count; i++)
+	for (uint16_t i = 0; i < s->show_samples; i++)
 	{
 		adc[i] = adc[i] - s->minCode;
 	}
 }
 
-void normalize_scale(SignalInfo *s, volatile uint16_t *adc, uint16_t count,
-		uint16_t k_bits)
+void normalize_scale(SignalInfo *s, volatile uint16_t *adc, uint16_t k_bits)
 {
-	for (uint16_t i = 0; i < count; i++)
+	for (uint16_t i = 0; i < s->show_samples; i++)
 	{
 		adc[i] = (adc[i] - s->minCode) >> k_bits;
 	}
 }
 
-void normalize_for_display(SignalInfo *s, volatile uint16_t *adc,
-		uint16_t count)
+void normalize_real(SignalInfo *s, volatile uint16_t *adc)
 {
+	for (uint16_t i = 0; i < s->show_samples; i++)
+	{
+		uint32_t tmp = (adc[i] - s->minCode);
+		tmp = (tmp * 64) << 10;
+		tmp = (tmp / (s->range + 1));
+		tmp = (tmp >> 10);
+		adc[i] = (uint16_t) tmp;
+	}
+
+}
+
+void normalize_for_display(SignalInfo *s, volatile uint16_t *adc)
+{
+	normalize_real(s, adc);
+	s->normalized = 1;
+	return;
+
 	uint16_t DISP_H = 64;
 	if (s->range < DISP_H)
 	{
-//		normalize_simple(s, adc, count);
+		normalize_simple(s, adc);
 	}
 	else
 	{
-
 		if (s->range < 256)
 		{
-			normalize_scale(s, adc, count, 2);
+			normalize_scale(s, adc, 2);
 		}
 		else
 		{
 			if (s->range < 1024)
 			{
-				normalize_scale(s, adc, count, 4);
+				normalize_scale(s, adc, 4);
 			}
 			else
 			{
-				normalize_scale(s, adc, count, 6);
+				normalize_scale(s, adc, 6);
 			}
 		}
 	}
 	s->normalized = 1;
 }
 
-void decimate_for_display(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
+void decimate_for_display(SignalInfo *s, volatile uint16_t *adc)
 {
 	uint16_t DISP_W = 128;
-	if (count == DISP_W)
+	uint16_t count = s->total_samples;
+	if (count <= DISP_W)
 	{
+		s->show_samples = s->total_samples;
 		s->decimated = 1;
 		return;
 	}
@@ -103,18 +136,19 @@ void decimate_for_display(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 		if (index_adc >= count)
 			break;
 	}
-	s->total_samples = index_dec;
+
 	for (uint16_t i = index_dec; i < DISP_W; i++)
 	{
 		adc[index_dec] = 0;
 	}
+	s->show_samples = index_dec;
 	s->decimated = 1;
 }
 
 void process_adc(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 {
-	check_adc_data(s, adc, count);
-//	normalize_for_display(s, adc, count);
-	decimate_for_display(s, adc, count);
+	check_adc_data(s, adc, count); // set total_samples here
+	decimate_for_display(s, adc); // set show_samples_here
+	normalize_for_display(s, adc);
 }
 
