@@ -58,7 +58,7 @@ volatile uint16_t new_measure_do = 0;
 volatile uint16_t tick1 = 0;
 volatile uint16_t tick2 = 0;
 
-#define MAX_SAMPLES_COUNT 2048
+#define MAX_SAMPLES_COUNT 1024
 // 5120
 
 #pragma pack(push, 2)
@@ -131,20 +131,23 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 void init_my_devices()
 {
-	HAL_Delay(400);
+	HAL_Delay(100);
 	OLED_Init(&hi2c1);
 	OLED_FontSet(Font_MSX_6x8_rus1251);
 	OLED_SetContrast(4);
 	OLED_Clear(0);
+	OLED_DrawStr("STM32F103C8T6", 0, 0, 1);
+	OLED_DrawStr(__DATE__, 0, 8, 1);
+	OLED_DrawStr(__TIME__, 0, 16, 1);
 	char str[20];
 	sprintf(str, "S=%ld", HAL_RCC_GetSysClockFreq());
-	OLED_DrawStr(str, 0, 16, 1);
-	sprintf(str, "H=%ld", HAL_RCC_GetHCLKFreq());
-	OLED_DrawStr(str, 64, 16, 1);
-	sprintf(str, "1=%ld", HAL_RCC_GetPCLK1Freq());
 	OLED_DrawStr(str, 0, 24, 1);
-	sprintf(str, "2=%ld", HAL_RCC_GetPCLK2Freq());
+	sprintf(str, "H=%ld", HAL_RCC_GetHCLKFreq());
 	OLED_DrawStr(str, 64, 24, 1);
+	sprintf(str, "1=%ld", HAL_RCC_GetPCLK1Freq());
+	OLED_DrawStr(str, 0, 32, 1);
+	sprintf(str, "2=%ld", HAL_RCC_GetPCLK2Freq());
+	OLED_DrawStr(str, 64, 32, 1);
 	OLED_UpdateScreen();
 	HAL_Delay(400);
 	OLED_Clear(0);
@@ -173,12 +176,9 @@ void print_ticks()
 {
 	char str[15];
 	sprintf(str, "%05u", tick1);
-	OLED_DrawStr(str, 32, 0, 1);
+	OLED_DrawStr(str, 0, 56, 1);
 	sprintf(str, "%05u", tick2);
-	OLED_DrawStr(str, 32, 8, 1);
-	sprintf(str, "%05u", sample_index);
-	OLED_DrawStr(str, 32, 16, 1);
-	OLED_UpdateScreen();
+	OLED_DrawStr(str, 36, 56, 1);
 }
 
 void draw_waveform()
@@ -205,6 +205,7 @@ void draw_waveform()
 //			OLED_DrawStr(str, x * 32, y * 8, 1);
 //		}
 //	}
+	print_ticks();
 	OLED_UpdateScreen();
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 }
@@ -264,13 +265,10 @@ int main(void)
 		if (new_measure_do == 1)
 		{
 			new_measure_do = 0;
-//			draw_waveform();
-//			print_ticks();
 		}
 		if (adc_stopped)
 		{
 			draw_waveform();
-//			print_ticks();
 			sample_index = 0;
 			adc_stopped = 0;
 		}
