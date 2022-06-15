@@ -56,10 +56,10 @@ volatile uint16_t adc_stopped = 0;
 volatile uint16_t new_measure_do = 0;
 
 volatile uint16_t tick1 = 0;
-volatile uint16_t tick2 = 0;
 
 // 128*25
 #define MAX_SAMPLES_COUNT 3200
+// 3200
 
 // 5120
 
@@ -88,10 +88,6 @@ static void MX_TIM2_Init(void);
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
-//	if (hadc->Instance == ADC1)
-//	{
-	//	}
-
 	if (adc_stopped)
 	{
 		return;
@@ -126,7 +122,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if (htim->Instance == htim3.Instance)
 	{
 		// tick 5000 Hz
-		tick2++;
 		HAL_ADC_Start_IT(&hadc1);
 	}
 }
@@ -159,57 +154,78 @@ void init_my_devices()
 void print_val(uint8_t line, uint16_t v)
 {
 	char str[15];
-	sprintf(str, "%05u", v);
-	OLED_DrawStr(str, 86, line * 8, 1);
+	sprintf(str, "%06u", v);
+
+	switch (line)
+	{
+	case 0:
+		str[0] = 'A';
+		break;
+	case 1:
+		str[0] = 'X';
+		break;
+	case 2:
+		str[0] = 'N';
+		break;
+	case 3:
+		str[0] = 0x98;
+		break;
+	case 4:
+		str[0] = 'L';
+		break;
+	case 5:
+		str[0] = 'S';
+		break;
+	case 6:
+		str[0] = 'T';
+		break;
+	case 7:
+		str[0] = 'F';
+		break;
+	}
+
+	OLED_DrawStr(str, OLED_WIDTH - 6 * 6, line * 8, 1);
 }
 
 void print_signal(SignalInfo *s)
 {
 	print_val(0, s->average);
-	print_val(1, s->minCode);
-	print_val(2, s->maxCode);
+	print_val(1, s->maxCode);
+	print_val(2, s->minCode);
 	print_val(3, s->range);
 	print_val(4, s->total_samples);
 	print_val(5, s->show_samples);
+	print_val(6, s->period);
+	print_val(7, s->freq);
 
+	char str[10];
+	str[0]=s->compressed?0x86:0x9b;
+	str[1]=0;
+	OLED_DrawStr(str, 0, 0, 1);
 }
 
 void print_ticks()
 {
 	char str[15];
-	sprintf(str, "%05u", tick1);
+	sprintf(str, "%06u", tick1);
 	OLED_DrawStr(str, 0, 56, 1);
-	sprintf(str, "%05u", tick2);
-	OLED_DrawStr(str, 36, 56, 1);
 }
 
 void draw_waveform()
 {
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+	signalInfo.decimated=((tick1 / 4) % 2) ? 1 : 0;
 	process_adc(&signalInfo, samples, MAX_SAMPLES_COUNT);
 
 	OLED_Clear(0);
 	for (uint16_t i = 0; i < signalInfo.show_samples; i++)
 	{
-		OLED_DrawPixel(i, samples[i]);
+			OLED_DrawPixel(i, OLED_HEIGHT - samples[i] - 1);
 	}
 
 	print_signal(&signalInfo);
 
-//	uint16_t i = 0;
-//	for (int x = 0; x < 4; x++)
-//	{
-//		for (int y = 0; y < 1; y++)
-//		{
-//			char str[15];
-//			sprintf(str, "%04d", samples[i]);
-//			i++;
-//			OLED_DrawStr(str, x * 32, y * 8, 1);
-//		}
-//	}
 	print_ticks();
 	OLED_UpdateScreen();
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 }
 
 /* USER CODE END 0 */
@@ -270,9 +286,11 @@ int main(void)
 		}
 		if (adc_stopped)
 		{
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 			draw_waveform();
 			sample_index = 0;
 			adc_stopped = 0;
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 		}
     /* USER CODE END WHILE */
 

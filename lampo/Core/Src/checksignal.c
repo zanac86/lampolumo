@@ -6,6 +6,7 @@ void check_adc_data(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 	{
 		return;
 	}
+	s->period=0;
 	s->zeros = 0;
 	s->ovfls = 0;
 	s->minCode = adc[0];
@@ -32,10 +33,11 @@ void check_adc_data(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 			s->minCode = adc[i];
 		}
 	}
-	sum = ((sum * 100) / count) / 100;
-	s->average = (uint16_t) sum;
+	sum = ((sum * 1000) / count);
+	s->average = (uint16_t) (sum / 1000);
 
-#define GAP_MIN 100
+/*
+#define GAP_MIN 50
 #define GAP_MAX (4095-GAP_MIN)
 	if (s->minCode>GAP_MIN)
 	{
@@ -45,10 +47,12 @@ void check_adc_data(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 	{
 		s->maxCode+=GAP_MIN;
 	}
-
+*/
 	s->range = s->maxCode - s->minCode;
 	s->normalized = 0;
-	s->decimated = 0;
+
+//	s->decimated = 0;
+
 	s->total_samples = count;
 	s->show_samples = 0;
 
@@ -143,24 +147,29 @@ void decimate_for_display(SignalInfo *s, volatile uint16_t *adc)
 	}
 	s->show_samples = index_dec;
 	s->decimated = 1;
+	s->compressed=1;
 }
 
 void decimate_for_display_real_first(SignalInfo *s, volatile uint16_t *adc)
 {
 	uint16_t DISP_W = 128;
 	uint16_t count = s->total_samples;
+	s->compressed=0;
 	if (count <= DISP_W)
 	{
 		s->show_samples = s->total_samples;
 		s->decimated = 1;
-		return;
+	}else
+	{
+		s->show_samples = DISP_W;
+		s->decimated = 1;
 	}
-	s->show_samples = DISP_W;
-	s->decimated = 1;
 }
 
 void calc_env_e(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 {
+	// посчитаем сумму энергии
+	//
 	s->env_E=0;
 	int32_t env_E_sum = 0;
 	for(uint16_t i=0;i<s->total_samples;i++)
@@ -174,37 +183,101 @@ void calc_env_e(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 
 void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 {
-	uint16_t periods=0;
+	s->period=0;
+	uint32_t periods=0;
+	uint16_t prev_index_max=0;
+	uint16_t prev_index_min=0;
 	uint32_t t_sum=0;
 
+	uint16_t min_index=0;
+	uint16_t max_index=0;
+	int16_t min_val=adc[0];
+	int16_t max_val=adc[0];
+	int16_t delta=4;
+	uint16_t look_for_max=1;
+
+	for(uint16_t i=0;i<s->total_samples;i++)
+	{
+		int16_t a=adc[i];
+		if (a>max_val)
+		{
+			max_index=i;
+			max_val=a;
+		}
+		if (a<min_val)
+		{
+			min_index=i;
+			min_val=a;
+		}
+
+		if (look_for_max)
+		{
+			if (a<(max_val-delta))
+			{
+				if (prev_index_max>0)
+				{
+					t_sum+=(max_index-prev_index_max);
+					periods++;
+				}
+				prev_index_max=max_index;
+				min_index=i;
+				min_val=a;
+				look_for_max=0;
+			}
+		}else
+		{
+			if (a>(min_val+delta))
+			{
+				if (prev_index_min>0)
+				{
+					t_sum+=(min_index-prev_index_min);
+					periods++;
+				}
+				prev_index_min=min_index;
+				max_index=i;
+				max_val=a;
+				look_for_max=1;
+
+			}
+		}
+	}
+
+	s->period=(uint16_t)(((t_sum*4096)/periods)/4096);
+	uint32_t tmp=((10000*1024)/((uint32_t)(s->period)))/1024;
+	s->freq=tmp;
+
+	// период в семплах
+	// freq_hz=1/(period*0.0001)
+
+//	s->period=periods;
 
 
-
-    mni, mn = 0, signal[1][0]
-    mxi, mx = 0, signal[1][0]
-    look_for_max = True
-    maxtab = []
-    mintab = []
-    for i in range(len(signal[0])):
-        a = signal[1][i]
-        if a > mx:
-            mxi, mx = i, a
-        if a < mn:
-            mni, mn = i, a
-
-        if look_for_max:
-            if a < (mx-delta):
-                maxtab.append(mxi)
-                mni, mn = i, a
-                look_for_max = False
-        else:
-            if a > (mn+delta):
-                mintab.append(mni)
-                mxi, mx = i, a
-                look_for_max = True
-    return mintab, maxtab
-
-
+//
+//    mni, mn = 0, signal[1][0]
+//    mxi, mx = 0, signal[1][0]
+//    look_for_max = True
+//    maxtab = []
+//    mintab = []
+//    for i in range(len(signal[0])):
+//        a = signal[1][i]
+//        if a > mx:
+//            mxi, mx = i, a
+//        if a < mn:
+//            mni, mn = i, a
+//
+//        if look_for_max:
+//            if a < (mx-delta):
+//                maxtab.append(mxi)
+//                mni, mn = i, a
+//                look_for_max = False
+//        else:
+//            if a > (mn+delta):
+//                mintab.append(mni)
+//                mxi, mx = i, a
+//                look_for_max = True
+//    return mintab, maxtab
+//
+//
 
 }
 
@@ -230,10 +303,16 @@ void calc_gost_pulsation(SignalInfo *s, volatile uint16_t *adc)
 void process_adc(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 {
 	check_adc_data(s, adc, count); // set total_samples here
-//	decimate_for_display(s, adc); // set show_samples_here
-	decimate_for_display_real_first(s, adc); // set show_samples_here
+	calc_period_max(s, adc);
+	if (s->decimated)
+	{
+		decimate_for_display_real_first(s, adc); // set show_samples_here
+	}else
+	{
+		decimate_for_display(s, adc); // set show_samples_here
+	}
 	normalize_for_display(s, adc);
 
 	// need skip first time or N for calculate store env_E like calibration
-	// before real calculation of lightness
+	// before real calculation of lightness pulsation
 }

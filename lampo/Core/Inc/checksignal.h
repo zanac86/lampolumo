@@ -14,8 +14,11 @@ typedef struct
 	uint16_t range;
 	uint16_t normalized;
 	uint16_t decimated;
+	uint16_t compressed;
 	uint16_t total_samples;
 	uint16_t show_samples;
+	uint16_t period;
+	uint16_t freq;
 
 	// environment average lightness at startup
 	int32_t env_E;
