@@ -145,10 +145,95 @@ void decimate_for_display(SignalInfo *s, volatile uint16_t *adc)
 	s->decimated = 1;
 }
 
+void decimate_for_display_real_first(SignalInfo *s, volatile uint16_t *adc)
+{
+	uint16_t DISP_W = 128;
+	uint16_t count = s->total_samples;
+	if (count <= DISP_W)
+	{
+		s->show_samples = s->total_samples;
+		s->decimated = 1;
+		return;
+	}
+	s->show_samples = DISP_W;
+	s->decimated = 1;
+}
+
+void calc_env_e(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
+{
+	s->env_E=0;
+	int32_t env_E_sum = 0;
+	for(uint16_t i=0;i<s->total_samples;i++)
+	{
+		env_E_sum+=adc[i];
+	}
+	s->env_E=env_E_sum*16;
+	s->env_E=s->env_E/s->total_samples;
+	s->env_E=s->env_E/16;
+}
+
+void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
+{
+	uint16_t periods=0;
+	uint32_t t_sum=0;
+
+
+
+
+    mni, mn = 0, signal[1][0]
+    mxi, mx = 0, signal[1][0]
+    look_for_max = True
+    maxtab = []
+    mintab = []
+    for i in range(len(signal[0])):
+        a = signal[1][i]
+        if a > mx:
+            mxi, mx = i, a
+        if a < mn:
+            mni, mn = i, a
+
+        if look_for_max:
+            if a < (mx-delta):
+                maxtab.append(mxi)
+                mni, mn = i, a
+                look_for_max = False
+        else:
+            if a > (mn+delta):
+                mintab.append(mni)
+                mxi, mx = i, a
+                look_for_max = True
+    return mintab, maxtab
+
+
+
+}
+
+void calc_gost_pulsation(SignalInfo *s, volatile uint16_t *adc)
+{
+	s->kp=0;
+	int32_t sum_E = 0;
+	for(uint16_t i=0;i<s->total_samples;i++)
+	{
+	      sum_E += adc[i] - s->env_E;
+
+	}
+
+//	int32_t Emax = 0;
+//	int32_t Emin = 0;
+//
+//	int32_t Emax_sum = 0;
+//	int32_t Emin_sum = 0;
+//	int32_t sum_E_sum = 0;
+
+}
+
 void process_adc(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 {
 	check_adc_data(s, adc, count); // set total_samples here
-	decimate_for_display(s, adc); // set show_samples_here
+//	decimate_for_display(s, adc); // set show_samples_here
+	decimate_for_display_real_first(s, adc); // set show_samples_here
 	normalize_for_display(s, adc);
-}
 
+	// need skip first time or N for calculate store env_E like calibration
+	// before real calculation of lightness
+}

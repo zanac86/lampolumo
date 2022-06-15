@@ -58,7 +58,9 @@ volatile uint16_t new_measure_do = 0;
 volatile uint16_t tick1 = 0;
 volatile uint16_t tick2 = 0;
 
-#define MAX_SAMPLES_COUNT 1024
+// 128*25
+#define MAX_SAMPLES_COUNT 3200
+
 // 5120
 
 #pragma pack(push, 2)
@@ -149,7 +151,7 @@ void init_my_devices()
 	sprintf(str, "2=%ld", HAL_RCC_GetPCLK2Freq());
 	OLED_DrawStr(str, 64, 32, 1);
 	OLED_UpdateScreen();
-	HAL_Delay(400);
+	HAL_Delay(800);
 	OLED_Clear(0);
 	OLED_UpdateScreen();
 }
@@ -261,7 +263,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 	while (1)
 	{
-		HAL_Delay(5);
+//		HAL_Delay(5);
 		if (new_measure_do == 1)
 		{
 			new_measure_do = 0;
@@ -361,7 +363,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_55CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_71CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -470,9 +472,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 288-1;
+  htim3.Init.Prescaler = 144-1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 10-1;
+  htim3.Init.Period = 50-1;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
