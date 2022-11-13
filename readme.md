@@ -38,14 +38,25 @@ Ext 8MHz -> HCLK 72 Mhz
 APB1 Timer clocks = 72 Mhz
 APB2 Timer clocks = 72 Mhz
 
-ADC1,ADC = 9 Mhz
+таймеры TIM2, TIM3, TIM4 работают от APB1 
+
+Это не период между семплами, а время преобразования
+зависит от тактовой частоты подаваемой на АЦП
+ADC1 = 9 Mhz
+а время преобразования задается в тиках этой частоты
 ADC1 conversion time - 71.5 cycles - 7,94444 us
+
+
 
 BUF - 3000 samples
 Sample ADC read period - 100 us - 10 kHz
 Fill time - 0.6 s
 
 TIM2 - 1 s
+
+Период между сбором семплов АЦП
 TIM3 - 
+делители 144-1, 50-1  - 10000 кГц - 100.0 мкс
+делители 225-1, 100-1 -  3200 кГц - 312.5 мкс
 
 
