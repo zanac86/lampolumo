@@ -1,6 +1,5 @@
 #include "checksignal.h"
-
-PulseEnergyState pe;
+#include "OLED.h"
 
 void check_adc_data(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 {
@@ -53,18 +52,19 @@ void check_adc_data(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 	s->range = s->maxCode - s->minCode;
 	s->normalized = 0;
 
-//	s->decimated = 0;
+	//  s->decimated = 0;
 
 	s->total_samples = count;
 	s->show_samples = 0;
 
 }
 
-void normalize_simple(SignalInfo *s, volatile uint16_t *adc)
+void normalize_simple(SignalInfo *s, volatile uint16_t *adc, uint16_t max_value)
 {
+	uint16_t d = (max_value - s->range) / 2;
 	for (uint16_t i = 0; i < s->show_samples; i++)
 	{
-		adc[i] = adc[i] - s->minCode;
+		adc[i] = adc[i] - s->minCode + d;
 	}
 }
 
@@ -92,20 +92,29 @@ void normalize_real(SignalInfo *s, volatile uint16_t *adc)
 
 void normalize_for_display(SignalInfo *s, volatile uint16_t *adc)
 {
-//	normalize_real(s, adc);
-//	s->normalized = 1;
-//	return;
 	/*
-	 <64			как есть
-	 64... 256		/4
-	 256...1024		/16
-	 >1024			/64
+	 <64            как есть
+	 64... 256      /4
+	 256...1024     /16
+	 >1024          /64
 	 */
-	uint16_t DISP_H = 64;
 
-	if (s->range < DISP_H)
+	// если влезает по высоте, то центрируем
+	if (s->range < OLED_HEIGHT)
 	{
-		normalize_simple(s, adc);
+		normalize_simple(s, adc, OLED_HEIGHT);
+	}
+	else
+	{
+		// по честному масштабируем в экран по высоте
+		normalize_real(s, adc);
+	}
+	s->normalized = 1;
+	return;
+
+	if (s->range < OLED_HEIGHT)
+	{
+		normalize_simple(s, adc, OLED_HEIGHT);
 	}
 	else
 	{
@@ -130,62 +139,46 @@ void normalize_for_display(SignalInfo *s, volatile uint16_t *adc)
 
 void decimate_for_display(SignalInfo *s, volatile uint16_t *adc)
 {
-	uint16_t DISP_W = 128;
-	uint16_t count = s->total_samples;
-	if (count <= DISP_W)
+	if (s->total_samples <= OLED_WIDTH)
 	{
 		s->show_samples = s->total_samples;
-		s->decimated = 1;
+		s->compressed = 0;
 		return;
 	}
-	uint16_t step = count / DISP_W;
+	uint16_t step = s->decimated;
 	uint16_t index_adc = 0;
 	uint16_t index_dec = 0;
-	for (uint16_t i = 0; i < DISP_W; i++)
+	uint16_t count = s->total_samples;
+	for (uint16_t i = 0; i < OLED_WIDTH; i++)
 	{
 		adc[index_dec] = adc[index_adc];
 		index_dec++;
 		index_adc += step;
 		if (index_adc >= count)
+		{
 			break;
+		}
 	}
 
-	for (uint16_t i = index_dec; i < DISP_W; i++)
+	for (uint16_t i = index_dec; i < OLED_WIDTH; i++)
 	{
 		adc[index_dec] = 0;
 	}
 	s->show_samples = index_dec;
-	s->decimated = 1;
 	s->compressed = 1;
 }
 
 void decimate_for_display_real_first(SignalInfo *s, volatile uint16_t *adc)
 {
-	uint16_t DISP_W = 128;
-	uint16_t count = s->total_samples;
 	s->compressed = 0;
-	if (count <= DISP_W)
+	if (s->total_samples <= OLED_WIDTH)
 	{
 		s->show_samples = s->total_samples;
-		s->decimated = 1;
 	}
 	else
 	{
-		s->show_samples = DISP_W;
-		s->decimated = 1;
+		s->show_samples = OLED_WIDTH;
 	}
-}
-
-void calc_env_e(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
-{
-	// посчитаем сумму энергии фона при начале измерений
-	//
-	int32_t env_E_sum = 0;
-	for (uint16_t i = 0; i < s->total_samples; i++)
-	{
-		env_E_sum += adc[i];
-	}
-	pe.env_E = ((env_E_sum * 16) / s->total_samples) / 16;
 }
 
 void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
@@ -194,7 +187,7 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 	// в t_sum собираю дельты между максимумами и минимумами
 	// потом вычислю период и частоту
 	s->period = 0;
-	uint32_t periods = 0;
+	uint32_t periods_count = 0;
 	uint16_t prev_index_max = 0;
 	uint16_t prev_index_min = 0;
 	uint32_t t_sum = 0;
@@ -205,6 +198,11 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 	int16_t max_val = adc[0];
 	int16_t delta = 4;
 	uint16_t look_for_max = 1;
+
+	uint32_t e_min = 0;
+	uint32_t e_max = 0;
+	uint16_t n_min = 0;
+	uint16_t n_max = 0;
 
 	for (uint16_t i = 0; i < s->total_samples; i++)
 	{
@@ -227,12 +225,14 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 				if (prev_index_max > 0)
 				{
 					t_sum += (max_index - prev_index_max);
-					periods++;
+					periods_count++;
 				}
 				prev_index_max = max_index;
 				min_index = i;
 				min_val = a;
 				look_for_max = 0;
+				e_max += a;
+				n_max++;
 			}
 		}
 		else
@@ -242,75 +242,60 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 				if (prev_index_min > 0)
 				{
 					t_sum += (min_index - prev_index_min);
-					periods++;
+					periods_count++;
 				}
 				prev_index_min = min_index;
 				max_index = i;
 				max_val = a;
 				look_for_max = 1;
+				e_min += a;
+				n_min++;
 
 			}
 		}
 	}
 
-	// t_sum умножить на 2, чтобы получить период, так как в t_sum попали
-	// времена полупериоды от макс до мин и от мин до макс
-	// для частоты 2 учтено в периоде
+	s->period = 0;
+	s->freq = 0;
 
-	s->period = (uint16_t) (((t_sum * 4096) / periods) / 4096) * 2;
-	uint32_t tmp = ((3200 * 1024) / ((uint32_t) (s->period))) / 1024;
-	s->freq = tmp;
+	if (periods_count > 0)
+	{
+		// в t_sum попали интервалы между соседними максимуми и соседними минимуми
+//		s->period = (uint16_t) (((t_sum * 4096) / periods_count) / 4096);
+//		uint32_t tmp = ((5000 * 1024) / ((uint32_t) (s->period))) / 1024;
+		s->period = (uint16_t) (t_sum / periods_count);
+		s->freq = (uint32_t) ((5000 * periods_count) / (t_sum));
+	}
 
-	// период в семплах
-	// freq_hz=1/(period*0.0001)
+	s->Emin = 0;
+	s->Emax = 0;
+	s->Eav = 0;
+	if ((n_min > 0) && (n_max > 0))
+	{
+		s->Emin = ((e_min << 6) / n_min) >> 6;
+		s->Emax = ((e_max << 6) / n_max) >> 6;
+		s->Eav = (((e_min + e_max) << 6) / (n_min + n_max)) >> 6;
+	}
 
-//	s->period=periods;
+	s->Eav = s->average;
 
 }
 
 void calc_gost_pulsation(SignalInfo *s, volatile uint16_t *adc)
 {
-	pe.kp = 0;
-	int32_t sum_E = 0;
-	uint16_t index_max = 0;
-	uint16_t index_min = 0;
-	for (uint16_t i = 0; i < s->total_samples; i++)
+	s->kp1 = 0;
+	s->kp2 = 0;
+
+	if ((s->Emax + s->Emin) != 0)
 	{
-		sum_E += adc[i] - pe.env_E;
-		if (adc[i] > adc[index_max])
-		{
-			index_max = i;
-		}
-		if (adc[i] < adc[index_min])
-		{
-			index_min = i;
-		}
+//		s->kp1 = (((s->Emax - s->Emin) * 1000) / (s->Emax + s->Emin)) / 10;//
+		s->kp1 = (((uint32_t)(s->maxCode - s->minCode) * 1000) / (s->maxCode + s->minCode)) / 10;//
 	}
-
-	pe.Emax_sum += adc[index_max];
-	pe.Emin_sum += adc[index_min];
-	pe.sum_E_sum += sum_E;
-
-	pe.e_count++;
-
-	if (pe.e_count >= pe.e_count_max)
+	if (s->Eav != 0)
 	{
-		int32_t Emax = ((pe.Emax_sum * 1000) / pe.e_count) / 1000;
-		int32_t Emin = ((pe.Emin_sum * 1000) / pe.e_count) / 1000;
-		int32_t E1=Emax+Emin-2*pe.env_E;
-
-		pe.kp1=(((1000*(Emax-Emin))/E1)/1000)*100;
-
-		int32_t E2=2*pe.sum_E_sum/pe.e_count/s->total_samples;
-
-		pe.kp2=(((1000*(Emax-Emin))/E2)/1000)*100;
-
+//		s->kp2 = (((s->Emax - s->Emin) * 10000) / (2 * (uint32_t) (s->Eav))) / 100;
+		s->kp2 = (((uint32_t)(s->maxCode - s->minCode) * 1000) / (2 * (uint32_t) (s->Eav))) / 10;
 	}
-
-//
-//	int32_t Emax_sum = 0;
-//	int32_t Emin_sum = 0;
-//	int32_t sum_E_sum = 0;
 
 }
 
@@ -318,14 +303,19 @@ void process_adc(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 {
 	check_adc_data(s, adc, count); // set total_samples here
 	calc_period_max(s, adc);
-	if (s->decimated)
+	calc_gost_pulsation(s, adc);
+	if (s->decimated == 0)
 	{
+		// для рисования по ширине экрана отсчет в пиксель
+		// рисовать только первые 128 отсчетов
 		decimate_for_display_real_first(s, adc);
 	}
 	else
 	{
+		// честно прореживаем для количества на экране
 		decimate_for_display(s, adc);
 	}
+
 	normalize_for_display(s, adc);
 
 	// need skip first time or N for calculate store env_E like calibration

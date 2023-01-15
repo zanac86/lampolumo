@@ -57,11 +57,19 @@ volatile uint16_t new_measure_do = 0;
 
 volatile uint16_t tick1 = 0;
 
-// 128*25
-#define MAX_SAMPLES_COUNT 320
+uint16_t decimates[] =
+{ 1, 2, 4, 8, 16, 32 };
+
+uint16_t decimate_index = 0;
+
+// 128*32
+#define MAX_SAMPLES_COUNT 4096
 // 3200
 
 // 5120
+
+// Отсчеты АЦП 12 бит 0..4095
+// 0-3.3 В
 
 #pragma pack(push, 2)
 volatile uint16_t samples[MAX_SAMPLES_COUNT] =
@@ -69,6 +77,8 @@ volatile uint16_t samples[MAX_SAMPLES_COUNT] =
 #pragma pack(pop)
 
 volatile uint16_t sample_index = 0;
+
+volatile uint16_t button_pressed = 0;
 
 /* USER CODE END PV */
 
@@ -161,10 +171,10 @@ void init_my_devices()
 	OLED_UpdateScreen();
 }
 
-void print_val(uint8_t line, uint16_t v)
+void print_val(uint8_t line, uint32_t v)
 {
 	char str[15];
-	sprintf(str, "%06u", v);
+	sprintf(str, "%06lu", v);
 
 	switch (line)
 	{
@@ -181,16 +191,16 @@ void print_val(uint8_t line, uint16_t v)
 		str[0] = 0x98;
 		break;
 	case 4:
-		str[0] = 'L';
+		str[0] = 'F';
 		break;
 	case 5:
-		str[0] = 'S';
+		str[0] = ' ';
 		break;
 	case 6:
-		str[0] = 'T';
+		str[0] = 'K';
 		break;
 	case 7:
-		str[0] = 'F';
+		str[0] = 'k';
 		break;
 	}
 
@@ -203,10 +213,10 @@ void print_signal(SignalInfo *s)
 	print_val(1, s->maxCode);
 	print_val(2, s->minCode);
 	print_val(3, s->range);
-	print_val(4, s->total_samples);
-	print_val(5, s->show_samples);
-	print_val(6, s->period);
-	print_val(7, s->freq);
+	print_val(4, s->freq);
+	print_val(5, s->decimated);
+	print_val(6, s->kp1);
+	print_val(7, s->kp2);
 
 	char str[10];
 	// если compressed - то узкий символ прямоугольник
@@ -224,7 +234,10 @@ void print_ticks()
 
 void draw_waveform()
 {
-	signalInfo.decimated = ((tick1 / 4) % 2) ? 1 : 0;
+	decimate_index = (tick1 / 2) % 6;
+
+	signalInfo.decimated = decimates[decimate_index];
+
 	process_adc(&signalInfo, samples, MAX_SAMPLES_COUNT);
 
 	OLED_Clear(0);
@@ -234,7 +247,6 @@ void draw_waveform()
 	}
 
 	print_signal(&signalInfo);
-
 	print_ticks();
 	OLED_UpdateScreen();
 }
@@ -290,7 +302,7 @@ int main(void)
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
-//		HAL_Delay(5);
+		//      HAL_Delay(5);
 		if (new_measure_do == 1)
 		{
 			new_measure_do = 0;
@@ -396,7 +408,7 @@ static void MX_ADC1_Init(void)
 	 */
 	sConfig.Channel = ADC_CHANNEL_0;
 	sConfig.Rank = ADC_REGULAR_RANK_1;
-	sConfig.SamplingTime = ADC_SAMPLETIME_71CYCLES_5;
+	sConfig.SamplingTime = ADC_SAMPLETIME_41CYCLES_5;
 	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
 	{
 		Error_Handler();
@@ -509,7 +521,7 @@ static void MX_TIM3_Init(void)
 
 	/* USER CODE END TIM3_Init 1 */
 	htim3.Instance = TIM3;
-	htim3.Init.Prescaler = 225 - 1;
+	htim3.Init.Prescaler = 144 - 1;
 	htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
 	htim3.Init.Period = 100 - 1;
 	htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -561,10 +573,26 @@ static void MX_GPIO_Init(void)
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
+	/*Configure GPIO pin : PB15 */
+	GPIO_InitStruct.Pin = GPIO_PIN_15;
+	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+	/* EXTI interrupt init*/
+	HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
-
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	if (GPIO_Pin == GPIO_PIN_15)
+	{
+		button_pressed = 1;
+	}
+}
 /* USER CODE END 4 */
 
 /**
@@ -593,8 +621,8 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+    /* User can add his own implementation to report the file name and line number,
+       ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
