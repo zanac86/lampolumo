@@ -7,6 +7,9 @@ void check_adc_data(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 	{
 		return;
 	}
+	s->total_samples = count;
+	s->show_samples = 0;
+	s->normalized = 0;
 	s->period = 0;
 	s->zeros = 0;
 	s->ovfls = 0;
@@ -34,28 +37,10 @@ void check_adc_data(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 			s->minCode = adc[i];
 		}
 	}
-	sum = ((sum * 1000) / count);
-	s->average = (uint16_t) (sum / 1000);
+	sum = ((sum << 7) / (uint32_t) count);
+	s->average = (uint16_t) (sum >> 7);
 
-	/*
-	 #define GAP_MIN 50
-	 #define GAP_MAX (4095-GAP_MIN)
-	 if (s->minCode>GAP_MIN)
-	 {
-	 s->minCode-=GAP_MIN;
-	 }
-	 if (s->maxCode<GAP_MAX)
-	 {
-	 s->maxCode+=GAP_MIN;
-	 }
-	 */
 	s->range = s->maxCode - s->minCode;
-	s->normalized = 0;
-
-	//  s->decimated = 0;
-
-	s->total_samples = count;
-	s->show_samples = 0;
 
 }
 
@@ -76,15 +61,28 @@ void normalize_scale(SignalInfo *s, volatile uint16_t *adc, uint16_t k_bits)
 	}
 }
 
-void normalize_real(SignalInfo *s, volatile uint16_t *adc)
+void normalize_real_range(SignalInfo *s, volatile uint16_t *adc)
 {
-	uint32_t DISP_H = 64;
 	for (uint16_t i = 0; i < s->show_samples; i++)
 	{
 		uint32_t tmp = (adc[i] - s->minCode);
-		tmp = (tmp * DISP_H) << 10;
+		tmp = (tmp * OLED_HEIGHT) << 8;
 		tmp = (tmp / (s->range + 1));
-		tmp = (tmp >> 10);
+		tmp = (tmp >> 8);
+		adc[i] = (uint16_t) tmp;
+	}
+
+}
+
+void normalize_real_full(SignalInfo *s, volatile uint16_t *adc)
+{
+	uint16_t range = s->maxCode;
+	for (uint16_t i = 0; i < s->show_samples; i++)
+	{
+		uint32_t tmp = (adc[i]);
+		tmp = (tmp * OLED_HEIGHT) << 8;
+		tmp = (tmp / (range + 1));
+		tmp = (tmp >> 8);
 		adc[i] = (uint16_t) tmp;
 	}
 
@@ -99,6 +97,10 @@ void normalize_for_display(SignalInfo *s, volatile uint16_t *adc)
 	 >1024          /64
 	 */
 
+	normalize_real_full(s, adc);
+	s->normalized = 1;
+	return;
+
 	// если влезает по высоте, то центрируем
 	if (s->range < OLED_HEIGHT)
 	{
@@ -107,10 +109,13 @@ void normalize_for_display(SignalInfo *s, volatile uint16_t *adc)
 	else
 	{
 		// по честному масштабируем в экран по высоте
-		normalize_real(s, adc);
+		normalize_real_full(s, adc);
 	}
 	s->normalized = 1;
+
 	return;
+
+	//////////////////////////////////////////////////////
 
 	if (s->range < OLED_HEIGHT)
 	{
@@ -196,7 +201,7 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 	uint16_t max_index = 0;
 	int16_t min_val = adc[0];
 	int16_t max_val = adc[0];
-	int16_t delta = 4;
+	int16_t delta = 2;
 	uint16_t look_for_max = 1;
 
 	uint32_t e_min = 0;
@@ -231,7 +236,7 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 				min_index = i;
 				min_val = a;
 				look_for_max = 0;
-				e_max += a;
+				e_max += adc[max_index];
 				n_max++;
 			}
 		}
@@ -248,7 +253,7 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 				max_index = i;
 				max_val = a;
 				look_for_max = 1;
-				e_min += a;
+				e_min += adc[min_index];
 				n_min++;
 
 			}
@@ -274,36 +279,20 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 	{
 		s->Emin = ((e_min << 6) / n_min) >> 6;
 		s->Emax = ((e_max << 6) / n_max) >> 6;
-		s->Eav = (((e_min + e_max) << 6) / (n_min + n_max)) >> 6;
 	}
 
-	s->Eav = s->average;
-
-}
-
-void calc_gost_pulsation(SignalInfo *s, volatile uint16_t *adc)
-{
-	s->kp1 = 0;
-	s->kp2 = 0;
-
-	if ((s->Emax + s->Emin) != 0)
+	if ((s->average > 0) && ((s->Emax + s->Emin) > 0))
 	{
-//		s->kp1 = (((s->Emax - s->Emin) * 1000) / (s->Emax + s->Emin)) / 10;//
-		s->kp1 = (((uint32_t)(s->maxCode - s->minCode) * 1000) / (s->maxCode + s->minCode)) / 10;//
+		s->Eav = s->average;
+		s->kp1 = (((s->Emax - s->Emin) * 1000) / (s->Emax + s->Emin)) / 10;	//
+		s->kp2 = (((s->Emax - s->Emin) * 1000) / (2 * s->Eav)) / 10;
 	}
-	if (s->Eav != 0)
-	{
-//		s->kp2 = (((s->Emax - s->Emin) * 10000) / (2 * (uint32_t) (s->Eav))) / 100;
-		s->kp2 = (((uint32_t)(s->maxCode - s->minCode) * 1000) / (2 * (uint32_t) (s->Eav))) / 10;
-	}
-
 }
 
 void process_adc(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 {
 	check_adc_data(s, adc, count); // set total_samples here
 	calc_period_max(s, adc);
-	calc_gost_pulsation(s, adc);
 	if (s->decimated == 0)
 	{
 		// для рисования по ширине экрана отсчет в пиксель

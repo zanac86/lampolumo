@@ -63,6 +63,7 @@ uint16_t decimates[] =
 uint16_t decimate_index = 0;
 
 // 128*32
+//#define MAX_SAMPLES_COUNT 4096
 #define MAX_SAMPLES_COUNT 4096
 // 3200
 
@@ -194,7 +195,7 @@ void print_val(uint8_t line, uint32_t v)
 		str[0] = 'F';
 		break;
 	case 5:
-		str[0] = ' ';
+		str[0] = 'D';
 		break;
 	case 6:
 		str[0] = 'K';
