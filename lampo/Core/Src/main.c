@@ -58,8 +58,9 @@ volatile uint16_t new_measure_do = 0;
 volatile uint16_t tick1 = 0;
 
 uint16_t decimates[] =
-{ 1, 2, 4, 8, 16, 32 };
+{ 1, 2, 4, 8, 16, 32, 64 };
 
+const uint16_t decimate_max_index = 7;
 uint16_t decimate_index = 0;
 
 // 128*32
@@ -208,6 +209,15 @@ void print_val(uint8_t line, uint32_t v)
 	OLED_DrawStr(str, OLED_WIDTH - 6 * 6, line * 8, 1);
 }
 
+void draw_button_state()
+{
+	char str[10];
+	// если compressed - то узкий символ прямоугольник
+	str[0] = button_pressed ? 0x86 : 0x9b;
+	str[1] = 0;
+	OLED_DrawStr(str, 0, 0, 1);
+}
+
 void print_signal(SignalInfo *s)
 {
 	print_val(0, s->average);
@@ -219,11 +229,6 @@ void print_signal(SignalInfo *s)
 	print_val(6, s->kp1);
 	print_val(7, s->kp2);
 
-	char str[10];
-	// если compressed - то узкий символ прямоугольник
-	str[0] = s->compressed ? 0x86 : 0x9b;
-	str[1] = 0;
-	OLED_DrawStr(str, 0, 0, 1);
 }
 
 void print_ticks()
@@ -235,7 +240,7 @@ void print_ticks()
 
 void draw_waveform()
 {
-	decimate_index = (tick1 / 2) % 6;
+//	decimate_index = (tick1 / 2) % 6;
 
 	signalInfo.decimated = decimates[decimate_index];
 
@@ -303,7 +308,7 @@ int main(void)
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
-		//      HAL_Delay(5);
+//		HAL_Delay(1);
 		if (new_measure_do == 1)
 		{
 			new_measure_do = 0;
@@ -316,6 +321,15 @@ int main(void)
 			adc_stopped = 0;
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 		}
+
+		if (button_pressed)
+		{
+			draw_button_state();
+			OLED_UpdateScreen();
+			button_pressed = 0;
+			decimate_index = (decimate_index + 1) % decimate_max_index;
+		}
+
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
@@ -577,7 +591,7 @@ static void MX_GPIO_Init(void)
 	/*Configure GPIO pin : PB15 */
 	GPIO_InitStruct.Pin = GPIO_PIN_15;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 	/* EXTI interrupt init*/

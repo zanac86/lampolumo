@@ -41,7 +41,13 @@ void check_adc_data(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 	s->average = (uint16_t) (sum >> 7);
 
 	s->range = s->maxCode - s->minCode;
-
+	s->Eav = 0;
+	s->Emax = 0;
+	s->Emin = 0;
+	s->kp1 = 0;
+	s->kp2 = 0;
+	s->period = 0;
+	s->freq = 0;
 }
 
 void normalize_simple(SignalInfo *s, volatile uint16_t *adc, uint16_t max_value)
@@ -292,7 +298,10 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 void process_adc(SignalInfo *s, volatile uint16_t *adc, uint16_t count)
 {
 	check_adc_data(s, adc, count); // set total_samples here
-	calc_period_max(s, adc);
+	if (s->range > 10)
+	{
+		calc_period_max(s, adc);
+	}
 	if (s->decimated == 0)
 	{
 		// для рисования по ширине экрана отсчет в пиксель
