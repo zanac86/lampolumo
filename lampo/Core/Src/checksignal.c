@@ -268,6 +268,16 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 
 	s->period = 0;
 	s->freq = 0;
+	s->Emin = 0;
+	s->Emax = 0;
+	s->Eav = 0;
+	s->kp1 = 0;
+	s->kp2 = 0;
+
+	if ((s->zeros > s->total_samples / 2) || (s->ovfls > s->total_samples / 2))
+	{
+		return;
+	}
 
 	if (periods_count > 0)
 	{
@@ -278,9 +288,6 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 		s->freq = (uint32_t) ((5000 * periods_count) / (t_sum));
 	}
 
-	s->Emin = 0;
-	s->Emax = 0;
-	s->Eav = 0;
 	if ((n_min > 0) && (n_max > 0))
 	{
 		s->Emin = ((e_min << 6) / n_min) >> 6;
@@ -290,8 +297,11 @@ void calc_period_max(SignalInfo *s, volatile uint16_t *adc)
 	if ((s->average > 0) && ((s->Emax + s->Emin) > 0))
 	{
 		s->Eav = s->average;
-		s->kp1 = (((s->Emax - s->Emin) * 1000) / (s->Emax + s->Emin)) / 10;	//
-		s->kp2 = (((s->Emax - s->Emin) * 1000) / (2 * s->Eav)) / 10;
+		uint32_t kp1 = (((s->Emax - s->Emin) * 1000) / (s->Emax + s->Emin))
+				/ 10;
+		uint32_t kp2 = (((s->Emax - s->Emin) * 1000) / (2 * s->Eav)) / 10;
+		s->kp1 = (kp1 > 100) ? 100 : (uint16_t) (kp1);
+		s->kp2 = (kp2 > 100) ? 100 : (uint16_t) (kp2);
 	}
 }
 

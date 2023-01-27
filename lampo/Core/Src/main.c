@@ -58,14 +58,15 @@ volatile uint16_t new_measure_do = 0;
 volatile uint16_t tick1 = 0;
 
 uint16_t decimates[] =
-{ 1, 2, 4, 8, 16, 32, 64 };
+{ 1, 2, 4, 8, 16, 32, 64, 128 };
 
-const uint16_t decimate_max_index = 7;
+const uint16_t decimate_max_index = 8;
 uint16_t decimate_index = 0;
 
 // 128*32
-//#define MAX_SAMPLES_COUNT 4096
 #define MAX_SAMPLES_COUNT 4096
+//#define MAX_SAMPLES_COUNT 3200
+//#define MAX_SAMPLES_COUNT 2048
 // 3200
 
 // 5120
@@ -241,11 +242,8 @@ void print_ticks()
 void draw_waveform()
 {
 //	decimate_index = (tick1 / 2) % 6;
-
 	signalInfo.decimated = decimates[decimate_index];
-
 	process_adc(&signalInfo, samples, MAX_SAMPLES_COUNT);
-
 	OLED_Clear(0);
 	for (uint16_t i = 0; i < signalInfo.show_samples; i++)
 	{
@@ -254,6 +252,45 @@ void draw_waveform()
 
 	print_signal(&signalInfo);
 	print_ticks();
+	OLED_UpdateScreen();
+}
+
+void print_val_zoom(char c, uint32_t v, uint8_t x, uint8_t y, uint8_t zoom)
+{
+	char str[15];
+	sprintf(str, "%4lu", v);
+	str[0] = c;
+
+	OLED_DrawStrZoom(str, x, y, 1, zoom);
+}
+
+void draw_big_numbers()
+{
+	signalInfo.decimated = decimates[decimate_index];
+	process_adc(&signalInfo, samples, MAX_SAMPLES_COUNT);
+	OLED_Clear(0);
+
+	char str[15];
+	sprintf(str, "Kp %3u %%", signalInfo.kp1);
+	OLED_DrawStrZoom(str, 4, 3, 1, 2);
+
+	sprintf(str, "Fr %4u Hz", signalInfo.freq);
+	OLED_DrawStrZoom(str, 4, 24, 1, 2);
+
+	OLED_DrawRectangle(0, 0, 127, 21);
+	OLED_DrawRectangle(0, 21, 127, 42);
+	OLED_DrawRectangle(0, 42, 127, 63);
+
+	sprintf(str, "%4u Min", signalInfo.minCode);
+	OLED_DrawStrZoom(str, 4, 45, 1, 1);
+	sprintf(str, "%4u Max", signalInfo.maxCode);
+	OLED_DrawStrZoom(str, 4, 54, 1, 1);
+
+	sprintf(str, "%4u Av", signalInfo.average);
+	OLED_DrawStrZoom(str, 70, 45, 1, 1);
+	sprintf(str, "%4u \x98", signalInfo.range);
+	OLED_DrawStrZoom(str, 70, 54, 1, 1);
+
 	OLED_UpdateScreen();
 }
 
@@ -316,7 +353,14 @@ int main(void)
 		if (adc_stopped)
 		{
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-			draw_waveform();
+			if (decimate_index == (decimate_max_index - 1))
+			{
+				draw_big_numbers();
+			}
+			else
+			{
+				draw_waveform();
+			}
 			sample_index = 0;
 			adc_stopped = 0;
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);

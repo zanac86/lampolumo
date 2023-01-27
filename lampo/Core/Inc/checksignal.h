@@ -35,8 +35,8 @@ typedef struct
     uint32_t Emax;
     uint32_t Emin;
     uint32_t Eav;
-    uint32_t kp1;
-    uint32_t kp2;
+    uint16_t kp1;
+    uint16_t kp2;
 
 } SignalInfo;
 
